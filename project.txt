@@ -1,0 +1,109 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import requests
+import json
+
+twitter_archive = pd.read_csv('twitter-archive-enhanced.csv')
+
+url = "https://d17h27t6h515a5.cloudfront.net/topher/2017/August/599fd2ad_image-predictions/image-predictions.tsv"
+response = requests.get(url)
+
+with open('image-predictions.tsv', mode ='wb') as file:
+    file.write(response.content)
+
+image_prediction = pd.read_csv('image-predictions.tsv', sep='\t' )
+
+tweet_json=pd.read_json("tweet-json copy",lines=True,encoding='utf-8')
+##quality
+#1 Keep original ratings (no retweets) that have images
+print(sum(pd.isnull(twitter_archive['retweeted_status_user_id']).value_counts()))
+
+#2 'timestamp' col is string not datetime
+print(type(twitter_archive['timestamp'][0]))
+#3 ['name', 'doggo', 'floofer', 'pupper', 'puppo'] col with missing values
+col_missing_value=[]
+for col in twitter_archive.columns:
+    if('None' in list(twitter_archive[col].values)):
+        col_missing_value.append(col)
+
+#4 'rating_denominator' have values greater than 10
+for v in twitter_archive['rating_denominator'].values:
+    if(v>10):
+        print("incorrect value in this col")
+        break
+
+#5 'rating_numerator' is integer and it should be float
+print(type(twitter_archive['rating_numerator'][0]))
+
+#6 columns ('retweeted_status_id', 'retweeted_status_user_id','retweeted_status_timestamp') won't be used for analysis
+li_twitter_archive=[]
+for col in twitter_archive.columns:
+    if("retweet" in col):
+        li_twitter_archive.append(col)
+
+#7 "jpg_url" has 66 duplicated values
+c=0
+for v in image_prediction["jpg_url"].duplicated().values:
+    if(v):
+     c=c+1
+
+#8 column id has name different than 2 data set
+
+##Tidiness
+
+#1 'doggo', 'floofer', 'pupper', 'puppo' it's about dog personality
+
+li_dog_personality=[]
+for i in range(len(twitter_archive)):
+    if(twitter_archive['doggo'][i] != 'None'):
+        li_dog_personality.append('doggo')
+    elif(twitter_archive['floofer'][i] != 'None'):
+        li_dog_personality.append('floofer')
+    elif (twitter_archive['pupper'][i] != 'None'):
+        li_dog_personality.append('pupper')
+    elif (twitter_archive['puppo'][i] != 'None'):
+        li_dog_personality.append('puppo')
+    else:
+        li_dog_personality.append('None')
+
+twitter_archive['dog_personality']=pd.DataFrame(li_dog_personality)
+twitter_archive.pop('doggo')
+twitter_archive.pop('floofer')
+twitter_archive.pop('pupper')
+twitter_archive.pop('puppo')
+
+#2 we need from json only id , retweet_count , favorite_count
+for col in tweet_json.columns:
+    if(col!='id' and col!='retweet_count'and col!='favorite_count' ):
+        tweet_json.pop(col)
+
+##Clean
+
+#1
+twitter_archive=twitter_archive[pd.isnull(twitter_archive['retweeted_status_user_id'])]
+#2
+twitter_archive['timestamp']= pd.to_datetime(twitter_archive['timestamp'])
+#3
+twitter_archive=twitter_archive[(twitter_archive[col_missing_value[0]] != "None")]
+twitter_archive=twitter_archive[(twitter_archive['dog_personality'] != "None")]
+#4
+twitter_archive=twitter_archive[twitter_archive['rating_denominator']<=10]
+#5
+twitter_archive['rating_numerator']=twitter_archive['rating_numerator'].astype(float)
+#6
+for l in li_twitter_archive:
+    twitter_archive.pop(l)
+
+#7
+image_prediction = image_prediction.drop_duplicates(subset=['jpg_url'], keep='last')
+
+#8
+tweet_json["tweet_id"] = tweet_json["id"]
+tweet_json.pop("id")
+
+#tidiness
+#3 All tables should be part of one dataset
+df_twitter = pd.merge(tweet_json,image_prediction, how = 'left', on = ['tweet_id'])
+df_twitter = pd.merge(twitter_archive,df_twitter, how = 'left', on = ['tweet_id'])
+print(df_twitter.columns)
